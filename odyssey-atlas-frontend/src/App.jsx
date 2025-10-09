@@ -1,22 +1,19 @@
 import React, { useState } from 'react';
 
-// Import the components from their new files
 import SidebarNav from './components/SidebarNav';
 import ScoutsPortalView from './components/ScoutsPortalView';
 import PlaceholderView from './components/PlaceholderView';
+import TourMapView from './components/TourMapView';
 
-// --- Main App Component ---
 export default function App() {
-    // State to manage which view is currently active
     const [activeView, setActiveView] = useState('scouts-portal');
 
-    // Function to render the correct view based on state
     const renderActiveView = () => {
         switch (activeView) {
             case 'scouts-portal':
                 return <ScoutsPortalView />;
             case 'tour-maps':
-                return <PlaceholderView title="Tour Maps & History" />;
+                return <TourMapView />;
             case 'ringmasters-drills':
                 return <PlaceholderView title="Ringmaster's Drills" />;
             case 'top-scout-board':
@@ -39,3 +36,4 @@ export default function App() {
         </div>
     );
 }
+
