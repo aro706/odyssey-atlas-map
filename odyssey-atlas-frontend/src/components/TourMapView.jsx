@@ -1,5 +1,7 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import mapboxgl from 'mapbox-gl';
+import { useAuth } from '../context/AuthContext.jsx'; // Corrected import
+import axios from 'axios'; // Import axios
 
 // --- HELPER FUNCTIONS (These do not need to be inside the component) ---
 const calculateBearing=(a,b)=>{const [c,d]=a,[e,f]=b,g=a=>a*Math.PI/180,h=a=>a*180/Math.PI,i=Math.sin(g(e-c))*Math.cos(g(f)),j=Math.cos(g(d))*Math.sin(g(f))-Math.sin(g(d))*Math.cos(g(f))*Math.cos(g(e-c));return(h(Math.atan2(i,j))+360)%360};function encodePolyline(a){let b=0,c=0,d="";for(let e=0;e<a.length;e++){const[f,g]=a[e],h=Math.round(g*1e5),i=Math.round(f*1e5),j=h-b,k=i-c;b=h,c=i,d+=encodeSignedNumber(j)+encodeSignedNumber(k)}return d}function encodeSignedNumber(a){let b=a<<1;if(a<0)b=~b;return encodeNumber(b)}function encodeNumber(a){let b="";while(a>=32)b+=String.fromCharCode((32|a&31)+63),a>>=5;b+=String.fromCharCode(a+63);return b}
@@ -11,6 +13,7 @@ const TourMapView = () => {
     const personMarker = useRef(null);
     const activePopups = useRef([]);
     const audioPlayerRef = useRef(null);
+    const ambientAudioRef = useRef(null);
 
     // State
     const [cityData, setCityData] = useState(null);
@@ -25,14 +28,43 @@ const TourMapView = () => {
     const [audioSrc, setAudioSrc] = useState(null);
     const [isLoadingAudio, setIsLoadingAudio] = useState(false);
     const [currentLandmark, setCurrentLandmark] = useState(null);
-    
-    // State for the city-wide audio button
     const [isCityAudioPlaying, setIsCityAudioPlaying] = useState(false);
+    const [achievementUnlocked, setAchievementUnlocked] = useState('');
+    const [allAchievements, setAllAchievements] = useState([]);
 
+    const { isAuthenticated } = useAuth();
     const accessToken = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
     const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 
-    // --- LOGIC AND EFFECTS ---
+    const awardAchievement = async (achievementId, achievementName) => {
+        if (!isAuthenticated || !achievementId) return;
+
+        try {
+            await axios.post('http://localhost:3001/api/users/achievements', { achievementId });
+            console.log(`Achievement '${achievementName}' awarded!`);
+            setAchievementUnlocked(achievementName);
+            setTimeout(() => setAchievementUnlocked(''), 5000);
+        } catch (err) {
+            if (err.response && err.response.status !== 400) {
+                console.error('Failed to award achievement', err);
+            } else {
+                console.log("User may already have this achievement.");
+            }
+        }
+    };
+
+    useEffect(() => {
+        const fetchAllAchievements = async () => {
+            try {
+                const res = await axios.get('http://localhost:3001/api/achievements');
+                setAllAchievements(res.data);
+            } catch (err) {
+                console.error("Could not fetch the list of achievements", err);
+            }
+        };
+        fetchAllAchievements();
+    }, []);
+
 
     useEffect(() => {
         fetch(`${API_BASE_URL}/api/cities/paris`)
@@ -105,13 +137,21 @@ const TourMapView = () => {
             const audioBlob = await response.blob();
             const audioUrl = URL.createObjectURL(audioBlob);
             setAudioSrc(audioUrl);
+
+            if (landmark.name === 'Eiffel Tower') {
+                const eiffelAchievement = allAchievements.find(a => a.name === 'Parisian Historian');
+                if (eiffelAchievement) {
+                    awardAchievement(eiffelAchievement._id, eiffelAchievement.name);
+                }
+            }
+
         } catch (err) {
             setError(`Audio Error: ${err.message}`);
             handleCloseAudio();
         } finally {
             setIsLoadingAudio(false);
         }
-    }, [API_BASE_URL, handleCloseAudio]);
+    }, [API_BASE_URL, handleCloseAudio, allAchievements, awardAchievement]);
 
     const handlePlayCityStory = useCallback(async () => {
         if (isCityAudioPlaying) {
@@ -237,19 +277,64 @@ const TourMapView = () => {
         return () => personMarker.current?.remove();
     }, [isWalking, routeGeoJSON]);
 
-    const handleStartWalk=()=>{setCurrentStep(0);setIsWalking(true)};
-    const handleNextStep=()=>{if(routeGeoJSON&&currentStep<routeGeoJSON.geometry.coordinates.length-1)setCurrentStep(a=>a+1)};
+    const handleStartWalk=()=>{
+        if (ambientAudioRef.current) {
+            ambientAudioRef.current.volume = 0.3;
+            ambientAudioRef.current.play();
+        }
+        setCurrentStep(0);
+        setIsWalking(true)
+    };
+    
+    const handleNextStep=()=>{
+        if(routeGeoJSON && currentStep < routeGeoJSON.geometry.coordinates.length - 1) {
+            setCurrentStep(a=>a+1)
+        } else if (routeGeoJSON && currentStep >= routeGeoJSON.geometry.coordinates.length - 1) {
+            const walkAchievement = allAchievements.find(a => a.name === "Walk a Mile");
+            if (walkAchievement) {
+                awardAchievement(walkAchievement._id, walkAchievement.name);
+            }
+        }
+    };
+    
     const handlePrevStep=()=>{if(currentStep>0)setCurrentStep(a=>a-1)};
-    const handleExitWalk=()=>setIsWalking(false);
-    const clearWalk=()=>{setWalkStartPoint(null);setRouteGeoJSON(null);setIsWalking(false)};
+    
+    const handleExitWalk=()=>{
+        if (ambientAudioRef.current) {
+            ambientAudioRef.current.pause();
+            ambientAudioRef.current.currentTime = 0;
+        }
+        setIsWalking(false);
+    };
+
+    const clearWalk=()=>{
+        if (ambientAudioRef.current) {
+            ambientAudioRef.current.pause();
+            ambientAudioRef.current.currentTime = 0;
+        }
+        setWalkStartPoint(null);
+        setRouteGeoJSON(null);
+        setIsWalking(false);
+    };
 
     if (loading) return <div className="p-10 text-xl">Loading map data...</div>;
     if (error && !cityData) return <div className="p-10 text-xl text-red-500 bg-red-50 rounded-lg">{error}</div>;
 
     return (
         <div className="w-full h-full relative">
+            <audio ref={ambientAudioRef} src="/sounds/city-traffic.mp3" loop />
             <div ref={mapContainer} className="absolute top-0 bottom-0 w-full" />
             
+            {achievementUnlocked && (
+                <div className="absolute top-5 left-1/2 -translate-x-1/2 bg-yellow-400 text-gray-900 font-bold p-4 rounded-lg shadow-2xl z-30 flex items-center gap-4 animate-bounce">
+                    <i className="fas fa-trophy text-2xl"></i>
+                    <div>
+                        <p className="text-sm">Achievement Unlocked!</p>
+                        <p>{achievementUnlocked}</p>
+                    </div>
+                </div>
+            )}
+
             {cityData?.description && (
                 <div className="absolute top-4 left-4 z-10">
                     <button 
@@ -268,7 +353,7 @@ const TourMapView = () => {
 
             {walkStartPoint && !isWalking && ( <div className="absolute top-20 left-4 bg-white p-4 rounded-lg shadow-lg z-10"><p className="font-bold text-red-800">Walk Mode Active</p><p>Start: <span className="font-semibold">{walkStartPoint.name}</span></p><button onClick={clearWalk} className="mt-2 text-xs text-blue-600 hover:underline">Clear Walk</button></div> )}
             {routeGeoJSON && !isWalking && ( <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-white p-4 rounded-lg shadow-lg z-10 flex items-center gap-4"><p className="font-bold text-green-700">Route Calculated!</p><button onClick={handleStartWalk} className="bg-green-600 text-white font-bold py-2 px-4 rounded hover:bg-green-700 transition-colors">Start Virtual Walk</button></div> )}
-            {isWalking && ( <div className="absolute bottom-4 left-1/2 -translate-x-1/2 w-11/12 max-w-3xl bg-white p-4 rounded-lg shadow-2xl z-20"><div className="relative h-48 md:h-64 bg-gray-200 rounded flex items-center justify-center">{isImageLoading&&<div className="text-gray-500">Loading step...</div>}<img src={streetViewImage} alt="Street level view with route overlay" className="w-full h-full object-cover rounded" onLoad={()=>setIsImageLoading(false)}/></div><div className="flex justify-between items-center mt-4"><button onClick={handlePrevStep} disabled={currentStep===0} className="bg-gray-700 text-white font-bold py-2 px-6 rounded hover:bg-gray-800 transition-colors disabled:bg-gray-300">Back</button><p className="text-sm font-semibold">Step {currentStep+1} of {routeGeoJSON?.geometry.coordinates.length || 0}</p><button onClick={handleNextStep} disabled={!routeGeoJSON||currentStep>=routeGeoJSON.geometry.coordinates.length-1} className="bg-gray-700 text-white font-bold py-2 px-6 rounded hover:bg-gray-800 transition-colors disabled:bg-gray-300">Next</button></div><button onClick={handleExitWalk} className="absolute top-2 right-2 bg-red-600 text-white rounded-full w-8 h-8 flex items-center justify-center font-extrabold text-lg hover:bg-red-700">&times;</button></div> )}
+            {isWalking && ( <div className="absolute bottom-4 left-1/2 -translate-x-1/2 w-11/12 max-w-3xl bg-white p-4 rounded-lg shadow-2xl z-20"><div className="relative h-48 md:h-64 bg-gray-200 rounded flex items-center justify-center">{isImageLoading&&<div className="text-gray-500">Loading step...</div>}<img src={streetViewImage} alt="Street level view with route overlay" className="w-full h-full object-cover rounded" onLoad={()=>setIsImageLoading(false)}/></div><div className="flex justify-between items-center mt-4"><button onClick={handlePrevStep} disabled={currentStep===0} className="bg-gray-700 text-white font-bold py-2 px-6 rounded hover:bg-gray-800 transition-colors disabled:bg-gray-300">Back</button><p className="text-sm font-semibold">Step {currentStep+1} of {routeGeoJSON?.geometry.coordinates.length || 0}</p><button onClick={handleNextStep} disabled={!routeGeoJSON} className="bg-gray-700 text-white font-bold py-2 px-6 rounded hover:bg-gray-800 transition-colors disabled:bg-gray-300">{currentStep >= routeGeoJSON.geometry.coordinates.length - 1 ? 'Finish' : 'Next'}</button></div><button onClick={handleExitWalk} className="absolute top-2 right-2 bg-red-600 text-white rounded-full w-8 h-8 flex items-center justify-center font-extrabold text-lg hover:bg-red-700">&times;</button></div> )}
             
             {(isLoadingAudio || audioSrc) && (
                  <div className="absolute bottom-5 left-1/2 -translate-x-1/2 bg-white p-4 rounded-lg shadow-lg w-11/12 md:w-1/3 z-10">
@@ -291,3 +376,4 @@ const TourMapView = () => {
 };
 
 export default TourMapView;
+
