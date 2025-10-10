@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import mapboxgl from 'mapbox-gl';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
+// --- HELPER FUNCTIONS ---
 
 const calculateBearing = (start, end) => {
     const [lon1, lat1] = start;
@@ -13,6 +13,38 @@ const calculateBearing = (start, end) => {
     const bearing = toDegrees(Math.atan2(y, x));
     return (bearing + 360) % 360;
 };
+
+function encodePolyline(coordinates) {
+    let plat = 0;
+    let plng = 0;
+    let encoded = '';
+    for (let i = 0; i < coordinates.length; i++) {
+        const [lng, lat] = coordinates[i];
+        const late5 = Math.round(lat * 1e5);
+        const lnge5 = Math.round(lng * 1e5);
+        const dlat = late5 - plat;
+        const dlng = lnge5 - plng;
+        plat = late5;
+        plng = lnge5;
+        encoded += encodeSignedNumber(dlat) + encodeSignedNumber(dlng);
+    }
+    return encoded;
+}
+function encodeSignedNumber(num) {
+    let sgn_num = num << 1;
+    if (num < 0) sgn_num = ~sgn_num;
+    return encodeNumber(sgn_num);
+}
+function encodeNumber(num) {
+    let encodeString = '';
+    while (num >= 0x20) {
+        encodeString += String.fromCharCode((0x20 | (num & 0x1f)) + 63);
+        num >>= 5;
+    }
+    encodeString += String.fromCharCode(num + 63);
+    return encodeString;
+}
+
 
 const TourMapView = () => {
     const mapContainer = useRef(null);
@@ -31,6 +63,7 @@ const TourMapView = () => {
     const [isImageLoading, setIsImageLoading] = useState(false);
 
     const accessToken = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
+    const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 
     useEffect(() => {
         fetch(`${API_BASE_URL}/api/cities/paris`)
@@ -38,7 +71,7 @@ const TourMapView = () => {
             .then(data => setCityData(data))
             .catch(err => setError(`Failed to fetch map data: ${err.message}`))
             .finally(() => setLoading(false));
-    }, []);
+    }, [API_BASE_URL]);
 
     const addOrUpdateMarkers = useCallback(() => {
         if (!map.current || !cityData) return;
@@ -110,7 +143,6 @@ const TourMapView = () => {
             zoom: 12
         });
         map.current = mapInstance;
-
         mapInstance.addControl(new mapboxgl.NavigationControl(), 'top-right');
         
         const currentMapContainer = mapContainer.current;
@@ -145,7 +177,7 @@ const TourMapView = () => {
             source.setData(routeGeoJSON || { type: 'Feature', geometry: null });
         }
     }, [routeGeoJSON]);
-    
+
     const updateStreetViewImage = useCallback(() => {
         if (!routeGeoJSON || !isWalking) return;
         setIsImageLoading(true);
@@ -157,7 +189,9 @@ const TourMapView = () => {
             return;
         }
         const bearing = calculateBearing(currentCoord, nextCoord);
-        const imageUrl = `https://api.mapbox.com/styles/v1/mapbox/streets-v12/static/${currentCoord.join(',')},15,${bearing},60/800x400?access_token=${accessToken}`;
+        const encoded = encodePolyline(routeCoords);
+        const pathOverlay = `path-5+3887be-0.8(${encodeURIComponent(encoded)})`;
+        const imageUrl = `https://api.mapbox.com/styles/v1/mapbox/streets-v12/static/${pathOverlay}/${currentCoord.join(',')},15,${bearing},60/800x400?access_token=${accessToken}`;
         setStreetViewImage(imageUrl);
         if (personMarker.current) personMarker.current.setLngLat(currentCoord);
     }, [routeGeoJSON, isWalking, currentStep, accessToken]);
@@ -210,7 +244,7 @@ const TourMapView = () => {
                 <div className="absolute bottom-4 left-1/2 -translate-x-1/2 w-11/12 max-w-3xl bg-white p-4 rounded-lg shadow-2xl z-20">
                     <div className="relative h-48 md:h-64 bg-gray-200 rounded flex items-center justify-center">
                         {isImageLoading && <div className="text-gray-500">Loading step...</div>}
-                        <img src={streetViewImage} alt="Street level view" className="w-full h-full object-cover rounded" onLoad={() => setIsImageLoading(false)} />
+                        <img src={streetViewImage} alt="Street level view with route overlay" className="w-full h-full object-cover rounded" onLoad={() => setIsImageLoading(false)} />
                     </div>
                     <div className="flex justify-between items-center mt-4">
                         <button onClick={handlePrevStep} disabled={currentStep === 0} className="bg-gray-700 text-white font-bold py-2 px-6 rounded hover:bg-gray-800 transition-colors disabled:bg-gray-300">Back</button>
