@@ -6,7 +6,7 @@ const mongoose = require('mongoose');
 const textToSpeech = require('@google-cloud/text-to-speech');
 
 const app = express();
-const PORT = 3001;
+const PORT = process.env.PORT || 3001;
 
 // 👇 INSTANTIATE the Google Cloud client
 const client = new textToSpeech.TextToSpeechClient();
