@@ -43,6 +43,7 @@ const City = mongoose.model('City', citySchema);
 
 // --- API Routes ---
 app.get('/api/cities/:cityName', async (req, res) => {
+    // ... (no changes in this route)
     try {
         const cityName = req.params.cityName;
         console.log(`Request received for ${cityName} data!`);

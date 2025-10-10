@@ -1,5 +1,14 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import mapboxgl from 'mapbox-gl';
+import 'mapbox-gl/dist/mapbox-gl.css';
+
+// --- TEMPORARY DATA (for testing without a database) ---
+const temporaryStories = {
+    "Eiffel Tower": "I am the Iron Lady of Paris. For over a century, I have watched the city awaken and dream. From my heights, lovers have whispered promises and artists have found their muse.",
+    "Louvre Museum": "Beneath my glass pyramid lies a world of treasures. Kings once walked these halls, now filled with the silent whispers of art from across the ages.",
+    // You can add more temporary stories here by matching the landmark name
+};
+// ---------------------------------------------------------
 
 // --- HELPER FUNCTIONS (These do not need to be inside the component) ---
 const calculateBearing=(a,b)=>{const [c,d]=a,[e,f]=b,g=a=>a*Math.PI/180,h=a=>a*180/Math.PI,i=Math.sin(g(e-c))*Math.cos(g(f)),j=Math.cos(g(d))*Math.sin(g(f))-Math.sin(g(d))*Math.cos(g(f))*Math.cos(g(e-c));return(h(Math.atan2(i,j))+360)%360};function encodePolyline(a){let b=0,c=0,d="";for(let e=0;e<a.length;e++){const[f,g]=a[e],h=Math.round(g*1e5),i=Math.round(f*1e5),j=h-b,k=i-c;b=h,c=i,d+=encodeSignedNumber(j)+encodeSignedNumber(k)}return d}function encodeSignedNumber(a){let b=a<<1;if(a<0)b=~b;return encodeNumber(b)}function encodeNumber(a){let b="";while(a>=32)b+=String.fromCharCode((32|a&31)+63),a>>=5;b+=String.fromCharCode(a+63);return b}
@@ -118,6 +127,7 @@ const TourMapView = () => {
             handleCloseAudio();
             return;
         }
+    };
 
         if (!cityData?.description) return;
         
@@ -246,6 +256,7 @@ const TourMapView = () => {
     if (loading) return <div className="p-10 text-xl">Loading map data...</div>;
     if (error && !cityData) return <div className="p-10 text-xl text-red-500 bg-red-50 rounded-lg">{error}</div>;
 
+    // --- FINAL JSX WITH ROBUST INLINE STYLING ---
     return (
         <div className="w-full h-full relative">
             <div ref={mapContainer} className="absolute top-0 bottom-0 w-full" />
