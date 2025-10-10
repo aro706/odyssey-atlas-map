@@ -1,20 +1,20 @@
 import React, { useState, useEffect } from 'react';
 
-// Scout's Portal View Component
+// Use the environment variable for the base URL. For local dev, this will be undefined, 
+// so we default to a relative path ('') which will use the Vite proxy.
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
+
 const ScoutsPortalView = () => {
-    // State to hold city data, loading status, and any errors
     const [cityData, setCityData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
 
-    // useEffect hook to fetch data when the component mounts
     useEffect(() => {
-        // Fetch data from our new backend API.
-        // The '/api' prefix will be handled by the Vite proxy.
-        fetch('/api/cities/paris')
+        // Use the API_BASE_URL constant to construct the full fetch URL.
+        fetch(`${API_BASE_URL}/api/cities/paris`)
             .then(response => {
                 if (!response.ok) {
-                    throw new Error('Network response was not ok');
+                    throw new Error(`Network response was not ok (${response.status})`);
                 }
                 return response.json();
             })
@@ -26,15 +26,24 @@ const ScoutsPortalView = () => {
                 setError(error.message);
                 setLoading(false);
             });
-    }, []); // The empty array means this effect runs only once after the initial render
+    }, []);
 
-    // Conditional rendering based on the state
     if (loading) {
-        return <div className="p-10 text-xl">Loading city data...</div>;
+        return <div className="p-10 text-xl animate-pulse">Loading city data...</div>;
     }
 
     if (error) {
-        return <div className="p-10 text-xl text-red-500">Error: {error}</div>;
+        return (
+            <div className="p-10 text-center">
+                <p className="text-2xl font-bold text-red-600">Failed to Load City Data</p>
+                <p className="mt-2 text-gray-600">Please ensure the backend server is running and the VITE_API_BASE_URL is correctly set if this is a live deployment.</p>
+                <p className="mt-4 text-sm text-gray-500 bg-red-50 p-3 rounded-lg">Error details: {error}</p>
+            </div>
+        );
+    }
+    
+    if (!cityData) {
+        return <div className="p-10 text-xl">No city data was found.</div>;
     }
 
     return (
@@ -46,11 +55,10 @@ const ScoutsPortalView = () => {
             <p className="text-lg text-gray-600 leading-relaxed mb-10">{cityData.description}</p>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                {/* Landmarks Section */}
                 <div className="bg-white p-6 rounded-lg shadow-md">
                     <h3 className="text-2xl font-bold font-serif mb-4 text-red-800">Key Landmarks</h3>
                     <ul>
-                        {cityData.landmarks.map(item => (
+                        {cityData.landmarks?.map(item => (
                             <li key={item.name} className="border-b last:border-b-0 py-3">
                                 <p className="font-bold text-gray-700">{item.name}</p>
                                 <p className="text-sm text-gray-500">{item.info}</p>
@@ -58,12 +66,10 @@ const ScoutsPortalView = () => {
                         ))}
                     </ul>
                 </div>
-
-                {/* Culture Section */}
                 <div className="bg-white p-6 rounded-lg shadow-md">
                     <h3 className="text-2xl font-bold font-serif mb-4 text-red-800">Culture & Vibe</h3>
                      <ul>
-                        {cityData.culture.map(item => (
+                        {cityData.culture?.map(item => (
                             <li key={item.name} className="border-b last:border-b-0 py-3">
                                 <p className="font-bold text-gray-700">{item.name}</p>
                                 <p className="text-sm text-gray-500">{item.info}</p>
@@ -77,3 +83,4 @@ const ScoutsPortalView = () => {
 };
 
 export default ScoutsPortalView;
+
