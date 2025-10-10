@@ -1,7 +1,8 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import mapboxgl from 'mapbox-gl';
 
-// Helper function to calculate the direction (bearing) between two points
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
+
 const calculateBearing = (start, end) => {
     const [lon1, lat1] = start;
     const [lon2, lat2] = end;
@@ -31,29 +32,22 @@ const TourMapView = () => {
 
     const accessToken = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
 
-    // --- LOGIC ---
-
     useEffect(() => {
-        fetch('/api/cities/paris')
+        fetch(`${API_BASE_URL}/api/cities/paris`)
             .then(res => res.ok ? res.json() : Promise.reject(new Error(`HTTP error! status: ${res.status}`)))
             .then(data => setCityData(data))
             .catch(err => setError(`Failed to fetch map data: ${err.message}`))
             .finally(() => setLoading(false));
     }, []);
-    
-    // --- REUSABLE FUNCTION TO ADD/UPDATE MARKERS ---
+
     const addOrUpdateMarkers = useCallback(() => {
         if (!map.current || !cityData) return;
-
-        // Clear existing popups and markers
         activePopups.current.forEach(p => p.remove());
         activePopups.current = [];
         document.querySelectorAll('.mapboxgl-marker').forEach(marker => marker.remove());
 
-        // Add a marker for each landmark
         cityData.landmarks.forEach(landmark => {
             if (!landmark?.coordinates?.length) return;
-
             const isStartPoint = walkStartPoint?.name === landmark.name;
             const popupAction = walkStartPoint ? (isStartPoint ? 'none' : 'end') : 'start';
             const buttonText = walkStartPoint ? (isStartPoint ? '✓ Start Point' : 'Walk to Here') : 'Start Walk Here';
@@ -76,7 +70,6 @@ const TourMapView = () => {
         });
     }, [cityData, walkStartPoint]);
 
-
     const fetchRoute = useCallback(async (start, end) => {
         const url = `https://api.mapbox.com/directions/v5/mapbox/walking/${start.join(',')};${end.join(',')}` + `?geometries=geojson&access_token=${accessToken}`;
         try {
@@ -87,7 +80,6 @@ const TourMapView = () => {
                 setRouteGeoJSON({ type: 'Feature', geometry: data.routes[0].geometry });
             }
         } catch (err) {
-            console.error("ERROR: Failed to fetch route:", err);
             setError("Could not calculate the walking route.");
         }
     }, [accessToken]);
@@ -95,7 +87,6 @@ const TourMapView = () => {
     const handlePopupClick = useCallback((e) => {
         const button = e.target.closest('button[data-landmark-name]');
         if (!button) return;
-
         const { landmarkName, action } = button.dataset;
         const landmark = cityData.landmarks.find(l => l.name === landmarkName);
         if (!landmark) return;
@@ -108,7 +99,6 @@ const TourMapView = () => {
         }
     }, [cityData, walkStartPoint, fetchRoute]);
 
-    // Main map initialization effect
     useEffect(() => {
         if (map.current || !cityData || !mapContainer.current || !accessToken) return;
 
@@ -126,9 +116,8 @@ const TourMapView = () => {
         const currentMapContainer = mapContainer.current;
         currentMapContainer.addEventListener('click', handlePopupClick);
 
-        // --- THE FIX: Wait for the map to load before adding markers ---
         mapInstance.on('load', () => {
-            addOrUpdateMarkers(); // Add markers for the first time
+            addOrUpdateMarkers();
             mapInstance.addSource('route', { type: 'geojson', data: null });
             mapInstance.addLayer({
                 id: 'route', type: 'line', source: 'route',
@@ -144,13 +133,11 @@ const TourMapView = () => {
         };
     }, [cityData, accessToken, handlePopupClick, addOrUpdateMarkers]);
 
-    // Effect to UPDATE markers only when the start point changes
     useEffect(() => {
         if (!map.current || !map.current.isStyleLoaded()) return;
         addOrUpdateMarkers();
     }, [walkStartPoint, addOrUpdateMarkers]);
 
-    // Effect to draw the route
     useEffect(() => {
         if (!map.current || !map.current.isStyleLoaded()) return;
         const source = map.current.getSource('route');
@@ -158,26 +145,8 @@ const TourMapView = () => {
             source.setData(routeGeoJSON || { type: 'Feature', geometry: null });
         }
     }, [routeGeoJSON]);
-
-    // Effect for the "You Are Here" marker
-    useEffect(() => {
-        if (isWalking && map.current && routeGeoJSON) {
-            if (personMarker.current) personMarker.current.remove();
-            const el = document.createElement('div');
-            el.style.cssText = 'background-image: url(https://placehold.co/24x24/3b82f6/ffffff?text=ME); width: 24px; height: 24px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 5px rgba(0,0,0,0.5);';
-            personMarker.current = new mapboxgl.Marker(el).setLngLat(routeGeoJSON.geometry.coordinates[0]).addTo(map.current);
-        }
-        return () => personMarker.current?.remove();
-    }, [isWalking, routeGeoJSON]);
-
-    // Effect for the street view image
-    useEffect(() => {
-        if (isWalking && routeGeoJSON) {
-            updateStreetViewImage();
-        }
-    }, [currentStep, isWalking, routeGeoJSON]);
-
-    const updateStreetViewImage = () => {
+    
+    const updateStreetViewImage = useCallback(() => {
         if (!routeGeoJSON || !isWalking) return;
         setIsImageLoading(true);
         const routeCoords = routeGeoJSON.geometry.coordinates;
@@ -191,12 +160,28 @@ const TourMapView = () => {
         const imageUrl = `https://api.mapbox.com/styles/v1/mapbox/streets-v12/static/${currentCoord.join(',')},15,${bearing},60/800x400?access_token=${accessToken}`;
         setStreetViewImage(imageUrl);
         if (personMarker.current) personMarker.current.setLngLat(currentCoord);
-    };
+    }, [routeGeoJSON, isWalking, currentStep, accessToken]);
+
+    useEffect(() => {
+        if (isWalking && routeGeoJSON) {
+            updateStreetViewImage();
+        }
+    }, [currentStep, isWalking, routeGeoJSON, updateStreetViewImage]);
+    
+    useEffect(() => {
+        if (isWalking && map.current && routeGeoJSON) {
+            if (personMarker.current) personMarker.current.remove();
+            const el = document.createElement('div');
+            el.style.cssText = 'background-image: url(https://placehold.co/24x24/3b82f6/ffffff?text=ME); width: 24px; height: 24px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 5px rgba(0,0,0,0.5);';
+            personMarker.current = new mapboxgl.Marker(el).setLngLat(routeGeoJSON.geometry.coordinates[0]).addTo(map.current);
+        }
+        return () => personMarker.current?.remove();
+    }, [isWalking, routeGeoJSON]);
 
     const handleStartWalk = () => { setCurrentStep(0); setIsWalking(true); };
     const handleNextStep = () => { if (routeGeoJSON && currentStep < routeGeoJSON.geometry.coordinates.length - 1) setCurrentStep(prev => prev + 1); };
     const handlePrevStep = () => { if (currentStep > 0) setCurrentStep(prev => prev - 1); };
-    const handleExitWalk = () => { setIsWalking(false); };
+    const handleExitWalk = () => setIsWalking(false);
     const clearWalk = () => { setWalkStartPoint(null); setRouteGeoJSON(null); setIsWalking(false); };
 
     if (loading) return <div className="p-10 text-xl">Loading map data...</div>;
