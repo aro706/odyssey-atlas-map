@@ -154,7 +154,7 @@ const TourMapView = () => {
                 setRouteGeoJSON({ type: 'Feature', geometry: data.routes[0].geometry });
             }
         } catch (err) {
-            setError("Could not calculate the walking route.");
+            setError("Could not calculate the walking route.",err.message);
         }
     }, [accessToken]);
     
